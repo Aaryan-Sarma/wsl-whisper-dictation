@@ -1,0 +1,82 @@
+#!/usr/bin/env bash
+# vflow-server - lifecycle for the resident whisper.cpp transcription server.
+#
+# The server keeps ggml-base.en.bin loaded in RAM so each dictation pays only the
+# ~2.1s encode, not the ~0.6s model load on top. Measured 29 Sep 2026:
+#   warm server 2.63s vs cold whisper-cli 3.8s on an 11s clip (i7-10610U, 4 threads).
+#
+# `ensure` is what the Windows daemon calls: idempotent, cheap when already up.
+# We do NOT depend on systemd lingering (loginctl shows Linger=no), so `start`
+# falls back to nohup when the user bus is not reachable.
+#
+# usage: vflow-server {ensure|start|stop|status|restart}
+set -uo pipefail
+
+ROOT="$HOME/voice"
+WCPP="$ROOT/whisper.cpp"
+BIN="$WCPP/build/bin/whisper-server"
+MODEL="$WCPP/models/ggml-base.en.bin"
+PORT=8178
+THREADS=4                 # 4 physical cores; 8 threads is ~5x SLOWER (SMT contention)
+UNIT="vflow-whisper.service"
+LOG="$ROOT/server.log"
+PIDFILE="$ROOT/server.pid"
+
+listening() { timeout 2 bash -c "exec 3<>/dev/tcp/127.0.0.1/$PORT" 2>/dev/null; }
+
+have_user_bus() {
+  [ -S "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/bus" ] && systemctl --user is-system-running >/dev/null 2>&1
+}
+
+do_start() {
+  listening && { echo "vflow-server: already listening on $PORT"; return 0; }
+
+  [ -x "$BIN" ]   || { echo "vflow-server: missing $BIN (build whisper.cpp first)" >&2; return 1; }
+  [ -f "$MODEL" ] || { echo "vflow-server: missing model $MODEL" >&2; return 1; }
+
+  if have_user_bus && systemctl --user list-unit-files "$UNIT" >/dev/null 2>&1; then
+    systemctl --user start "$UNIT" 2>/dev/null && echo "vflow-server: started via systemd"
+  else
+    # No user bus (WSL without a login session) - plain background process.
+    nohup "$BIN" -m "$MODEL" -t "$THREADS" --host 127.0.0.1 --port "$PORT" \
+      >"$LOG" 2>&1 &
+    echo $! > "$PIDFILE"
+    echo "vflow-server: started (pid $(cat "$PIDFILE"), log $LOG)"
+  fi
+
+  # Model load is ~0.6s; give it room on a cold page cache.
+  for _ in $(seq 1 30); do
+    listening && { echo "vflow-server: ready on 127.0.0.1:$PORT"; return 0; }
+    sleep 0.5
+  done
+  echo "vflow-server: failed to come up - see $LOG" >&2
+  return 1
+}
+
+do_stop() {
+  if have_user_bus && systemctl --user is-active --quiet "$UNIT" 2>/dev/null; then
+    systemctl --user stop "$UNIT" && echo "vflow-server: stopped (systemd)"
+  fi
+  if [ -f "$PIDFILE" ]; then
+    kill "$(cat "$PIDFILE")" 2>/dev/null && echo "vflow-server: stopped (pid $(cat "$PIDFILE"))"
+    rm -f "$PIDFILE"
+  fi
+  pkill -f "build/bin/whisper-server" 2>/dev/null
+  return 0
+}
+
+case "${1:-ensure}" in
+  ensure)  listening || do_start ;;
+  start)   do_start ;;
+  stop)    do_stop ;;
+  restart) do_stop; sleep 1; do_start ;;
+  status)
+    if listening; then
+      echo "vflow-server: UP on 127.0.0.1:$PORT (model $(basename "$MODEL"), ${THREADS}t)"
+    else
+      echo "vflow-server: DOWN"
+      exit 1
+    fi
+    ;;
+  *) echo "usage: vflow-server {ensure|start|stop|restart|status}" >&2; exit 2 ;;
+esac

@@ -1,0 +1,9 @@
+# local, private, or large - never publish
+vocab.txt
+corrections.txt
+*.wav
+*.log
+server.pid
+whisper.cpp/
+models/
+*.bin

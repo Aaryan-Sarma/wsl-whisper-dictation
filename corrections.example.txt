@@ -1,0 +1,18 @@
+# corrections.txt - deterministic fixes applied AFTER transcription.
+#
+# For terms the vocab prompt cannot rescue - usually genuine homophones, where
+# whisper hears something acoustically correct but wrong for your domain.
+#
+# Format:  <regex, case-insensitive><TAB><replacement>
+# Applied top to bottom. Lines starting with # are ignored. Use \b for word
+# boundaries so you don't mangle substrings.
+#
+# Keep this list SHORT and high-confidence: a wrong rule silently corrupts
+# dictation, which is worse than a misspelling you can see. These are examples -
+# replace with your own.
+
+\bpost gress\b	PostgreSQL
+\bpost gres\b	PostgreSQL
+\bcuber netties\b	Kubernetes
+\bg rpc\b	gRPC
+\bjot\b	JWT

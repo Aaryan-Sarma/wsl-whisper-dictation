@@ -1,0 +1,20 @@
+[Unit]
+# Resident whisper.cpp server for vflow dictation. Keeps ggml-base.en.bin loaded
+# so each utterance costs only the ~2.1s encode, not an extra ~0.6s model load.
+Description=vflow whisper.cpp transcription server
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=%h/voice/whisper.cpp/build/bin/whisper-server \
+  -m %h/voice/whisper.cpp/models/ggml-base.en.bin \
+  -t 4 --host 127.0.0.1 --port 8178
+Restart=always
+RestartSec=3
+# ~300 MB resident (150 MB model + compute buffers); box has ~5 GB free.
+MemoryMax=1G
+StandardOutput=append:%h/voice/server.log
+StandardError=append:%h/voice/server.log
+
+[Install]
+WantedBy=default.target

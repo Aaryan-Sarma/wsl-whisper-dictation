@@ -1,0 +1,1 @@
+meeting, agenda, roadmap, sprint, backlog, deploy, rollback, staging, production, latency, throughput, endpoint, webhook, pipeline, dataset, dashboard, kilobyte, megabyte, gigabyte, PostgreSQL, Kubernetes, Terraform, GitHub, Grafana, Prometheus, Datadog, OAuth, JWT, gRPC, GraphQL, Kafka.
